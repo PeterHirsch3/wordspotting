@@ -16,54 +16,60 @@ from DokAn_wordspotting.LSI import TopicSubSpace
 from eval import Eval
 from features import RelativeTermFrequencies
 def wordspotting():
+    #Dokument laden
     pageNumber = 2700270
     document_image_filename = 'pages/%d.png'%(pageNumber)
     image = Image.open(document_image_filename)
     im_arr = np.asarray(image, dtype='float32')
-    plt.imshow(im_arr, cmap=cm.get_cmap('Greys_r'))
-    #plt.show()
+    #Groundtruth laden
     gt = open("GT/%d.gtp"%(pageNumber))
+    #Codebook laden
     input_file = open('codebook/codebook.bin', 'r')
     codebook = np.fromfile(input_file, dtype='float32')
     codebook = np.reshape(codebook, (4096,128))
     words = []
+    #Groundtruth lesen
     for line in gt:
         str = line.rstrip().split()
         word_img = im_arr[int(str[1]):int(str[3]),int(str[0]):int(str[2])]
         words.append(word(word_img,str[4],codebook))
     gt.close()
-    plt.imshow(words[23].getImg(),cmap=cm.get_cmap('Greys_r'))
-    #plt.show()
     print "Deskriptoren berechnet"
     bof = []
+    #BagofFeatures der Wörter zusammentragen
     for word_ in words:
         bof.append(word_.getBof())
     bof = np.array(bof)
-    rtf = RelativeTermFrequencies()
-    bof = rtf.weighting(bof)
-    #dim = {5}
-    #for d in dim:
-        #tsp = TopicSubSpace(d)
-        #tsp.estimate(bof)
-        #bof = tsp.transform(bof)
-    dists = distance.cdist(bof,bof,'euclidean')
-    dists = argsort(dists,axis = 1)
-    result_word = np.array([([words[i].getWord() for i in c])for c in dists])
-    result_img = np.array([([words[i].getImg() for i in c])for c in dists])
-    print result_word[21,:20]
-    res = np.zeros(result_word.shape)
-    i = 0;
-    for c in result_word:
-        j = 0
-        for d in c:
-            if c[0] == d:
-                res[i,j]=1
-            j +=1
-        i +=1
-    print res[21,:20]
-    ev = Eval()
-    map = ev.mean_avarage_precision(res.tolist())
-    print map
+    
+    dim = {1,5,10,15,30,50,100,200}
+    for d in dim:
+        #Dimensionsreduktion in Dimension d
+        tsp = TopicSubSpace(d)
+        tsp.estimate(bof)
+        bof_n = tsp.transform(bof)
+        print bof_n.shape
+        #Distanz der BoF der Wörter zueinander berechnen und sortieren
+        dists = distance.cdist(bof_n,bof_n,'euclidean')
+        dists = argsort(dists,axis = 1)
+        
+        result_word = np.array([([words[i].getWord() for i in c])for c in dists])
+        result_img = np.array([([words[i].getImg() for i in c])for c in dists])    
+        
+        res = np.zeros(result_word.shape)
+        i = 0;
+        for c in result_word:
+            j = 0
+            for d in c:
+                if c[0] == d:
+                    res[i,j]=1
+                j +=1
+            i +=1
+            
+        print result_word[21,:25]
+        print res[21,:25]
+        ev = Eval()
+        map = ev.mean_avarage_precision(res.tolist())
+        print map
     
 class word (object):
     
@@ -71,22 +77,27 @@ class word (object):
         self._word_img_ = word_img
         self._word_ = word
         self._bof_ = None
+        
+        #Deskriptoren berechnen
         step_size = 5
-        cell_size = 5
-    
+        cell_size = 5        
         frames, desc = vlfeat.vl_dsift(word_img/255, step=step_size, size=cell_size)
         desc = np.array(desc, dtype=np.float)
-    
+        
+        #Deskriptoren quantisieren mithilfe vom Codebook
         dist_mat = distance.cdist(desc, codebook,'euclidean')
         dist_mat_sort_ind = np.argsort(dist_mat, axis=1)
+        
         global_ = dist_mat_sort_ind[:,0]
         left = global_[:len(global_)/2]
         #mid = global_[len(global_)/3:2*len(global_)/3]
         right = global_[len(global_)/2:]
+        
         bof_g = np.bincount(global_,minlength = 4095)
         bof_l = np.bincount(left,minlength = 4095)
         #bof_m = np.bincount(mid,minlength = 4095)
         bof_r = np.bincount(right,minlength = 4095)
+        
         self._bof_ = np.concatenate((bof_g,bof_l,bof_r),axis = 0)
     def getWord(self):
         return self._word_
@@ -94,9 +105,6 @@ class word (object):
         return self._bof_
     def getImg(self):
         return self._word_img_
-    def setBof(self,bof):
-        self._bof_ = bof
-
-    
+   
 if __name__ == '__main__':
     wordspotting()
